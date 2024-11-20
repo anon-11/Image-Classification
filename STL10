@@ -11,33 +11,26 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data import random_split
 
 # Download the dataset
-dataset = STL10(root='./data', download=True, split='train', transform=ToTensor())
+train_dataset = STL10(root='./data', download=True, split='train', transform=ToTensor())
 test_dataset = STL10(root='./data', split='test', transform=ToTensor())
 
 # Dataset sizes
-dataset_size = len(dataset)
+train_dataset_size = len(train_dataset)
 test_dataset_size = len(test_dataset)
 
 # Classes and image shape
-classes = dataset.classes
-img, label = dataset[0]
+classes = train_dataset.classes
+img, label = train_dataset[0]
 img_shape = img.shape
-
-# Train-test split
-train_size = 5000
-test_size = 8000
-train_ds, _ = random_split(dataset, [train_size, len(dataset) - train_size])  # Train subset
-test_ds = test_dataset  # Using the test dataset directly
 
 # DataLoader
 batch_size = 64
-train_loader = DataLoader(train_ds, batch_size, shuffle=True)
-test_loader = DataLoader(test_ds, batch_size)
+train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size)
 
 # Print sizes
-print(f"Dataset size: {dataset_size}")
-print(f"Train size: {train_size}")
-print(f"Test size: {test_size}")
+print(f"Train Dataset size: {train_dataset_size}")
+print(f"Test size: {test_dataset_size}")
 print(f"Classes: {classes}")
 print(f"Image shape: {img_shape}")
 
@@ -67,7 +60,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Train the model
-def train_model(model, train_loader, criterion, optimizer, epochs=5):
+def train_model(model, train_loader, criterion, optimizer, epochs=10):
     model.train()
     for epoch in range(epochs):
         total_loss = 0
@@ -95,6 +88,5 @@ def evaluate_model(model, test_loader):
     print(f"Test Accuracy: {accuracy:.2f}%")
 
 # Train and evaluate
-train_model(model, train_loader, criterion, optimizer, epochs=5)
+train_model(model, train_loader, criterion, optimizer, epochs=10)
 evaluate_model(model, test_loader)
-
