@@ -3,75 +3,90 @@ from tensorflow.keras.datasets import mnist
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
-
 import numpy as np
 from matplotlib import pyplot as plt
 
-(x_train, y_train), (x_test,y_test)=mnist.load_data()
+# Load the MNIST dataset
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-print(x_test.shape)
+# Visualize one example
 plt.imshow(x_train[0], cmap='binary')
-#print(y_train[0])
 
-y_train_encoded=to_categorical(y_train)
-y_test_encoded=to_categorical(y_test)
+# One-hot encoding for labels
+y_train_encoded = to_categorical(y_train)
+y_test_encoded = to_categorical(y_test)
 
-x_train_reshape=np.reshape(x_train,(60000,784))
-x_test_reshape=np.reshape(x_test,(10000,784))
+# Reshape the data
+x_train_reshape = np.reshape(x_train, (60000, 784))
+x_test_reshape = np.reshape(x_test, (10000, 784))
 
+# Normalization
+x_mean = np.mean(x_train_reshape)
+x_std = np.std(x_train_reshape)
+epsilon = 1e-10
 
-#print(y_test_encoded[0])
+x_train_norm = (x_train_reshape - x_mean) / (x_std + epsilon)
+x_test_norm = (x_test_reshape - x_mean) / (x_std + epsilon)
 
-#print(set(x_train_reshape[0]))
+# Define the model
+model = Sequential([
+    Dense(128, activation='relu', input_shape=[784]),
+    Dense(128, activation='relu'),
+    Dense(10, activation='softmax')
+])
 
-#normalization:
-
-x_mean=np.mean(x_train_reshape)
-x_std=np.std(x_train_reshape)
-
-epsilon=1e-10
-
-x_train_norm=(x_train_reshape-x_mean)/(x_std+epsilon)
-x_test_norm=(x_test_reshape-x_mean)/(x_std+epsilon)
-
-#print(set(x_train_norm[0]))
-model= Sequential([Dense(128, activation='relu', input_shape=[784,]), Dense(128, activation='relu'), Dense(10, activation='softmax')])
-
-#compiling model
+# Compile the model
 model.compile(optimizer='sgd', loss='categorical_crossentropy', metrics=['accuracy'])
 
+# Train the model and record accuracy and validation accuracy for plotting
+train_acc = []
+val_acc = []
+epochs = 100
 
-#training the model
-model.fit(x_train_norm, y_train_encoded, epochs=3, batch_size=32, validation_data=(x_test_norm, y_test_encoded))
+for epoch in range(epochs):
+    history = model.fit(x_train_norm, y_train_encoded, 
+                        epochs=1, 
+                        batch_size=32, 
+                        validation_data=(x_test_norm, y_test_encoded), 
+                        verbose=0)
+    
+    train_acc.append(history.history['accuracy'][0])
+    val_acc.append(history.history['val_accuracy'][0])
+    print(f"Epoch {epoch + 1}/{epochs} - Training Accuracy: {train_acc[-1]:.4f}, Validation Accuracy: {val_acc[-1]:.4f}")
 
-#evaluating model:
+# Plotting training and validation accuracy
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, epochs + 1), train_acc, label='Training Accuracy', marker='o')
+plt.plot(range(1, epochs + 1), val_acc, label='Validation Accuracy', marker='o')
+plt.title('Accuracy vs Epochs')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+plt.show()
 
-loss, accuracy=model.evaluate(x_test_norm, y_test_encoded)
+# Evaluate the model
+loss, accuracy = model.evaluate(x_test_norm, y_test_encoded)
 print("Test Loss:", loss)
 print("Test Accuracy:", accuracy)
 
+# Predictions
+predictions = model.predict(x_test_norm)
 
-#predictions
-predictions=model.predict(x_test_norm)
-#print(predictions.shape)
-
-plt.figure(figsize=(12,12))
-start_index=0
+# Plot a few predictions
+plt.figure(figsize=(12, 12))
+start_index = 0
 
 for i in range(25):
-  plt.subplot(5,5,i+1)
-  plt.grid(False)
-  plt.xticks([])
-  plt.yticks([])
-  pred=np.argmax(predictions[start_index+i])
-  groundtruth=y_test[start_index+i]
+    plt.subplot(5, 5, i + 1)
+    plt.grid(False)
+    plt.xticks([])
+    plt.yticks([])
+    pred = np.argmax(predictions[start_index + i])
+    groundtruth = y_test[start_index + i]
 
-  col='g'
-  if pred!=groundtruth:
-    col='r'
-  plt.xlabel('i={} | pred={} | gt={}'.format(start_index+i, pred, groundtruth))
-  plt.imshow(x_test[start_index+i], cmap='binary')
-plt.show()
+    col = 'g' if pred == groundtruth else 'r'
+    plt.xlabel(f'i={start_index + i} | pred={pred} | gt={groundtruth}', color=col)
+    plt.imshow(x_test[start_index + i], cmap='binary')
 
-plt.plot(predictions[8])
 plt.show()
