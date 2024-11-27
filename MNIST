@@ -2,76 +2,123 @@ import tensorflow as tf
 from tensorflow.keras.datasets import mnist
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
-
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
 import numpy as np
 from matplotlib import pyplot as plt
+import pandas as pd
+import time
 
-(x_train, y_train), (x_test,y_test)=mnist.load_data()
+# Load the MNIST dataset
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-print(x_test.shape)
+# Visualize an example
+plt.figure()
 plt.imshow(x_train[0], cmap='binary')
-#print(y_train[0])
-
-y_train_encoded=to_categorical(y_train)
-y_test_encoded=to_categorical(y_test)
-
-x_train_reshape=np.reshape(x_train,(60000,784))
-x_test_reshape=np.reshape(x_test,(10000,784))
-
-
-#print(y_test_encoded[0])
-
-#print(set(x_train_reshape[0]))
-
-#normalization:
-
-x_mean=np.mean(x_train_reshape)
-x_std=np.std(x_train_reshape)
-
-epsilon=1e-10
-
-x_train_norm=(x_train_reshape-x_mean)/(x_std+epsilon)
-x_test_norm=(x_test_reshape-x_mean)/(x_std+epsilon)
-
-#print(set(x_train_norm[0]))
-model= Sequential([Dense(128, activation='relu', input_shape=[784,]), Dense(128, activation='relu'), Dense(10, activation='softmax')])
-
-#compiling model
-model.compile(optimizer='sgd', loss='categorical_crossentropy', metrics=['accuracy'])
-
-
-#training the model
-model.fit(x_train_norm, y_train_encoded, epochs=3, batch_size=32, validation_data=(x_test_norm, y_test_encoded))
-
-#evaluating model:
-
-loss, accuracy=model.evaluate(x_test_norm, y_test_encoded)
-print("Test Loss:", loss)
-print("Test Accuracy:", accuracy)
-
-
-#predictions
-predictions=model.predict(x_test_norm)
-#print(predictions.shape)
-
-plt.figure(figsize=(12,12))
-start_index=0
-
-for i in range(25):
-  plt.subplot(5,5,i+1)
-  plt.grid(False)
-  plt.xticks([])
-  plt.yticks([])
-  pred=np.argmax(predictions[start_index+i])
-  groundtruth=y_test[start_index+i]
-
-  col='g'
-  if pred!=groundtruth:
-    col='r'
-  plt.xlabel('i={} | pred={} | gt={}'.format(start_index+i, pred, groundtruth))
-  plt.imshow(x_test[start_index+i], cmap='binary')
+plt.title("Example Image")
 plt.show()
 
-plt.plot(predictions[8])
+# Reshape and normalize the data
+x_train_reshape = x_train.reshape((60000, 28, 28, 1)) / 255.0
+x_test_reshape = x_test.reshape((10000, 28, 28, 1)) / 255.0
+
+# One-hot encode the labels
+y_train_encoded = to_categorical(y_train)
+y_test_encoded = to_categorical(y_test)
+
+# Define the CNN model
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
+    MaxPooling2D((2, 2)),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D((2, 2)),
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dense(10, activation='softmax')
+])
+
+# Compile the model
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Prepare training loop with custom output
+train_acc = []
+val_acc = []
+train_loss = []
+val_loss = []
+epochs = 50  # Adjust epochs as needed
+
+for epoch in range(epochs):
+    start_time = time.time()  # Record start time
+    
+    # Train the model for one epoch
+    history = model.fit(x_train_reshape, y_train_encoded, 
+                        epochs=1, 
+                        batch_size=32, 
+                        validation_data=(x_test_reshape, y_test_encoded), 
+                        verbose=1)
+    
+    # Calculate the time taken for this epoch
+    end_time = time.time()
+    epoch_time = end_time - start_time
+    
+    # Get the accuracy and loss for both train and validation
+    train_accuracy = history.history['accuracy'][0]
+    val_accuracy = history.history['val_accuracy'][0]
+    train_loss_val = history.history['loss'][0]
+    val_loss_val = history.history['val_loss'][0]
+
+    # Print the output in the desired format
+    print(f"Epoch {epoch + 1}/{epochs}")
+    
+    # Save accuracy and loss data for later
+    train_acc.append(train_accuracy)
+    val_acc.append(val_accuracy)
+    train_loss.append(train_loss_val)
+    val_loss.append(val_loss_val)
+
+# Save accuracy and loss data to an Excel file
+data = {
+    "Epoch": list(range(1, epochs + 1)),
+    "Training Accuracy": train_acc,
+    "Validation Accuracy": val_acc,
+
+}
+df = pd.DataFrame(data)
+df.to_excel("cnn_accuracy_data.xlsx", index=False)
+print("Accuracy and loss data saved to 'cnn_accuracy_data.xlsx'")
+
+# Plot the training and validation accuracy
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, epochs + 1), train_acc, label='Training Accuracy', marker='o')
+plt.plot(range(1, epochs + 1), val_acc, label='Validation Accuracy', marker='o')
+plt.title('Accuracy vs Epochs')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+# Evaluate the model on the test set
+loss, accuracy = model.evaluate(x_test_reshape, y_test_encoded)
+print(f"Test Loss: {loss:.4f}")
+print(f"Test Accuracy: {accuracy:.4f}")
+
+# Make predictions
+predictions = model.predict(x_test_reshape)
+
+# Visualize predictions with ground truth
+plt.figure(figsize=(12, 12))
+start_index = 0
+for i in range(25):
+    plt.subplot(5, 5, i + 1)
+    plt.grid(False)
+    plt.xticks([])
+    plt.yticks([])
+    pred = np.argmax(predictions[start_index + i])
+    groundtruth = y_test[start_index + i]
+    col = 'g' if pred == groundtruth else 'r'
+    plt.xlabel(f'i={start_index + i} | pred={pred} | gt={groundtruth}', color=col)
+    plt.imshow(x_test[start_index + i], cmap='binary')
+
 plt.show()
