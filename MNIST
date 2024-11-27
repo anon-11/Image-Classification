@@ -2,46 +2,46 @@ import tensorflow as tf
 from tensorflow.keras.datasets import mnist
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
 import numpy as np
 from matplotlib import pyplot as plt
+import pandas as pd
 
-# Load the MNIST dataset
+
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-# Visualize one example
+
 plt.imshow(x_train[0], cmap='binary')
 
-# One-hot encoding for labels
+
+x_train_reshape = x_train.reshape((60000, 28, 28, 1))
+x_test_reshape = x_test.reshape((10000, 28, 28, 1))
+
+
+x_train_norm = x_train_reshape / 255.0
+x_test_norm = x_test_reshape / 255.0
+
+
 y_train_encoded = to_categorical(y_train)
 y_test_encoded = to_categorical(y_test)
 
-# Reshape the data
-x_train_reshape = np.reshape(x_train, (60000, 784))
-x_test_reshape = np.reshape(x_test, (10000, 784))
 
-# Normalization
-x_mean = np.mean(x_train_reshape)
-x_std = np.std(x_train_reshape)
-epsilon = 1e-10
-
-x_train_norm = (x_train_reshape - x_mean) / (x_std + epsilon)
-x_test_norm = (x_test_reshape - x_mean) / (x_std + epsilon)
-
-# Define the model
 model = Sequential([
-    Dense(128, activation='relu', input_shape=[784]),
+    Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
+    MaxPooling2D((2, 2)),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D((2, 2)),
+    Flatten(),
     Dense(128, activation='relu'),
     Dense(10, activation='softmax')
 ])
 
-# Compile the model
-model.compile(optimizer='sgd', loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-# Train the model and record accuracy and validation accuracy for plotting
+
 train_acc = []
 val_acc = []
-epochs = 100
+epochs = 10  
 
 for epoch in range(epochs):
     history = model.fit(x_train_norm, y_train_encoded, 
@@ -54,7 +54,18 @@ for epoch in range(epochs):
     val_acc.append(history.history['val_accuracy'][0])
     print(f"Epoch {epoch + 1}/{epochs} - Training Accuracy: {train_acc[-1]:.4f}, Validation Accuracy: {val_acc[-1]:.4f}")
 
-# Plotting training and validation accuracy
+# Saving to excel file
+data = {
+    "Epoch": list(range(1, epochs + 1)),
+    "Training Accuracy": train_acc,
+    "Validation Accuracy": val_acc
+}
+df = pd.DataFrame(data)
+df.to_excel("cnn_accuracy_data.xlsx", index=False)
+
+print("Accuracy data saved to 'cnn_accuracy_data.xlsx'")
+
+
 plt.figure(figsize=(10, 6))
 plt.plot(range(1, epochs + 1), train_acc, label='Training Accuracy', marker='o')
 plt.plot(range(1, epochs + 1), val_acc, label='Validation Accuracy', marker='o')
@@ -73,7 +84,7 @@ print("Test Accuracy:", accuracy)
 # Predictions
 predictions = model.predict(x_test_norm)
 
-# Plot a few predictions
+
 plt.figure(figsize=(12, 12))
 start_index = 0
 
