@@ -14,10 +14,31 @@ stl10_dataset, dataset_info = tfds.load("stl10", with_info=True, as_supervised=T
 train_dataset = stl10_dataset['train']
 test_dataset = stl10_dataset['test']
 
-# Load the STL-10 dataset
-stl10_dataset, dataset_info = tfds.load("stl10", with_info=True, as_supervised=True)
-train_dataset = stl10_dataset['train']
-test_dataset = stl10_dataset['test']
+AUTOTUNE = tf.data.AUTOTUNE
+
+def preprocess(image, label):
+    image = tf.cast(image, tf.float32) / 255.0  # Normalize
+    print(image.shape)
+    label = tf.cast(label, tf.int32)           # Cast to int32 for one-hot encoding
+    label = tf.one_hot(label, depth=10)        # One-hot encode
+    return image, label
+
+train_dataset = train_dataset.map(preprocess, num_parallel_calls=AUTOTUNE)
+test_dataset = test_dataset.map(preprocess, num_parallel_calls=AUTOTUNE)
+
+# Add data augmentation
+def augment(image, label):
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_brightness(image, 0.1)
+    image = tf.image.random_crop(image, size=[96, 96, 3])
+    return image, label
+
+train_dataset = train_dataset.map(augment, num_parallel_calls=AUTOTUNE)
+
+# Prefetch to improve pipeline performance
+train_dataset = train_dataset.shuffle(1000).batch(32).prefetch(buffer_size=AUTOTUNE)
+test_dataset = test_dataset.batch(32).prefetch(buffer_size=AUTOTUNE)
+
 
 from tensorflow.keras.layers import SeparableConv2D
 
