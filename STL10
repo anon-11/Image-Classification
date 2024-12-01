@@ -1,13 +1,16 @@
 import tensorflow as tf
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, BatchNormalization
 import tensorflow_datasets as tfds
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import (SeparableConv2D, BatchNormalization, MaxPooling2D,
+                                     Flatten, Dense, Dropout, GlobalAveragePooling2D)
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.layers import Input
+
+from tensorflow.keras.callbacks import ReduceLROnPlateau
+import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import pyplot as plt
 import pandas as pd
-import time
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 # Load the STL-10 dataset
 stl10_dataset, dataset_info = tfds.load("stl10", with_info=True, as_supervised=True)
@@ -15,121 +18,90 @@ train_dataset = stl10_dataset['train']
 test_dataset = stl10_dataset['test']
 
 AUTOTUNE = tf.data.AUTOTUNE
-# Preprocessing with normalization
+
+# Preprocessing with normalization and one-hot encoding
 def preprocess(image, label):
-    image = tf.cast(image, tf.float32) / 255.0  # Normalize
-    print(image.shape)
-    label = tf.cast(label, tf.int32)           # Cast to int32 for one-hot encoding
-    label = tf.one_hot(label, depth=10)        # One-hot encode
+    image = tf.cast(image, tf.float32) / 255.0
+    label = tf.one_hot(label, depth=10)
     return image, label
 
 train_dataset = train_dataset.map(preprocess, num_parallel_calls=AUTOTUNE)
 test_dataset = test_dataset.map(preprocess, num_parallel_calls=AUTOTUNE)
 
-# Data augmentation with minimal transformations
+# Data augmentation
 def augment(image, label):
     image = tf.image.random_flip_left_right(image)
     image = tf.image.random_crop(image, size=[96, 96, 3])
+    image = tf.image.random_brightness(image, max_delta=0.2)
+    image = tf.image.random_contrast(image, lower=0.8, upper=1.2)
     return image, label
 
 train_dataset = train_dataset.map(augment, num_parallel_calls=AUTOTUNE)
 
-# Prefetch and shuffle datasets
+# Prefetch and batch
 train_dataset = train_dataset.shuffle(1000).batch(64).prefetch(buffer_size=AUTOTUNE)
 test_dataset = test_dataset.batch(64).prefetch(buffer_size=AUTOTUNE)
 
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import (SeparableConv2D, BatchNormalization, MaxPooling2D, 
-                                     Dense, Dropout, GlobalAveragePooling2D)
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.regularizers import l2
-
-# Define the optimized CNN model
+# Define the model
 model = Sequential([
-    # Convolutional layers with fewer filters and BatchNorm
-    SeparableConv2D(256, (3, 3), activation='relu', input_shape=(96, 96, 3)),
-    BatchNormalization(),
-    MaxPooling2D((2, 2)),
+        Input(shape=(96, 96, 3)),  # Explicit input layer
+        SeparableConv2D(1024, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
 
-    SeparableConv2D(256, (3, 3), activation='relu'),
-    BatchNormalization(),
-    MaxPooling2D((2, 2)),
+        SeparableConv2D(1024, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
 
-    GlobalAveragePooling2D(),
+        SeparableConv2D(1024, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
 
-    # Fully connected layers with regularization and dropout
-    Dense(64, activation='relu', kernel_regularizer=l2(1e-4)),
-    Dropout(0.6),
-    Dense(10, activation='softmax')  # Output layer
-])
+        SeparableConv2D(1024, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
 
-# Adjust optimizer with a lower learning rate
+        GlobalAveragePooling2D(),
+        Dense(1024, activation='relu', kernel_regularizer=l2(1e-4)),
+        Dropout(0.5),
+        Dense(1024, activation='relu', kernel_regularizer=l2(1e-4)),
+        Dropout(0.5),
+        Dense(10, activation='softmax')
+    ])
+
+# Optimizer and learning rate scheduler
 optimizer = Adam(learning_rate=1e-4)
+lr_scheduler = ReduceLROnPlateau(monitor='val_loss', patience=5, factor=0.5, verbose=1)
 
 # Compile the model
 model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
-# Learning rate scheduler
-from tensorflow.keras.callbacks import ReduceLROnPlateau
+# Training loop
+epochs = 500
+history = model.fit(train_dataset, epochs=epochs, validation_data=test_dataset, 
+                    callbacks=[lr_scheduler], verbose=1)
 
-lr_scheduler = ReduceLROnPlateau(
-    monitor='val_loss',
-    patience=5,
-    factor=0.5,
-    verbose=1
-)
+# Evaluate the model
+loss, accuracy = model.evaluate(test_dataset)
+print(f"Test Loss: {loss:.4f}")
+print(f"Test Accuracy: {accuracy:.4f}")
 
-# Prepare training loop with accuracy and loss tracking
-train_acc = []
-val_acc = []
-train_loss = []
-val_loss = []
-epochs = 50  # Adjusted to fewer epochs
-
-for epoch in range(epochs):
-    start_time = time.time()  # Record start time
-
-    # Train the model for one epoch
-    history = model.fit(
-        train_dataset,
-        epochs=1,
-        validation_data=test_dataset,
-        verbose=1,
-        callbacks=[lr_scheduler]  # Add learning rate scheduler
-    )
-
-    # Calculate the time taken for this epoch
-    end_time = time.time()
-    epoch_time = end_time - start_time
-
-    # Get the accuracy and loss for both train and validation
-    train_accuracy = history.history['accuracy'][0]
-    val_accuracy = history.history['val_accuracy'][0]
-    train_loss.append(history.history['loss'][0])
-    val_loss.append(history.history['val_loss'][0])
-
-    # Save accuracy data for later
-    train_acc.append(train_accuracy)
-    val_acc.append(val_accuracy)
-
-# Save accuracy and loss data to an Excel file
+# Save accuracy and loss data
 data = {
     "Epoch": list(range(1, epochs + 1)),
-    "Training Accuracy": train_acc,
-    "Validation Accuracy": val_acc,
-    "Training Loss": train_loss,
-    "Validation Loss": val_loss
+    "Training Accuracy": history.history['accuracy'],
+    "Validation Accuracy": history.history['val_accuracy'],
+    "Training Loss": history.history['loss'],
+    "Validation Loss": history.history['val_loss']
 }
 df = pd.DataFrame(data)
 df.to_excel("stl10_accuracy_data.xlsx", index=False)
 print("Accuracy and loss data saved to 'stl10_accuracy_data.xlsx'")
 
-# Plot the training and validation accuracy
-import matplotlib.pyplot as plt
-
+# Plot accuracy and loss
 plt.figure(figsize=(10, 6))
-plt.plot(range(1, epochs + 1), train_acc, label='Training Accuracy', marker='o')
-plt.plot(range(1, epochs + 1), val_acc, label='Validation Accuracy', marker='o')
+plt.plot(range(1, epochs + 1), history.history['accuracy'], label='Training Accuracy')
+plt.plot(range(1, epochs + 1), history.history['val_accuracy'], label='Validation Accuracy')
 plt.title('Accuracy vs Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Accuracy')
@@ -137,27 +109,12 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-# Evaluate the model on the test set
-loss, accuracy = model.evaluate(test_dataset)
-print(f"Test Loss: {loss:.4f}")
-print(f"Test Accuracy: {accuracy:.4f}")
-
-# Make predictions
-predictions = model.predict(test_dataset)
-
-# Visualize predictions with ground truth
-import numpy as np
-
-plt.figure(figsize=(12, 12))
-for i, (image, label) in enumerate(test_dataset.unbatch().take(25)):
-    plt.subplot(5, 5, i + 1)
-    plt.grid(False)
-    plt.xticks([])
-    plt.yticks([])
-    pred = np.argmax(predictions[i])
-    groundtruth = tf.argmax(label).numpy()
-    col = 'g' if pred == groundtruth else 'r'
-    plt.xlabel(f'Pred: {pred} | GT: {groundtruth}', color=col)
-    plt.imshow(image.numpy())
-plt.tight_layout()
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, epochs + 1), history.history['loss'], label='Training Loss')
+plt.plot(range(1, epochs + 1), history.history['val_loss'], label='Validation Loss')
+plt.title('Loss vs Epochs')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.grid(True)
 plt.show()
