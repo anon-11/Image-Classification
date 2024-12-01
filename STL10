@@ -71,15 +71,14 @@ for layer in model.layers:
 # Optimizer and callbacks
 optimizer = Adam(learning_rate=1e-3)
 lr_scheduler = ReduceLROnPlateau(monitor='val_loss', patience=5, factor=0.2, min_lr=1e-6, verbose=1)
-early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1)
 
 # Compile the model
 model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
 # Training loop
-epochs = 200
+epochs = 100
 history = model.fit(train_dataset, epochs=epochs, validation_data=test_dataset, 
-                    callbacks=[lr_scheduler, early_stopping], verbose=1)
+                    callbacks=[lr_scheduler], verbose=1)
 
 # Evaluate the model
 loss, accuracy = model.evaluate(test_dataset)
@@ -92,8 +91,6 @@ data = {
     "Epoch": list(range(1, len(history.history['accuracy']) + 1)),
     "Training Accuracy": history.history['accuracy'],
     "Validation Accuracy": history.history['val_accuracy'],
-    "Training Loss": history.history['loss'],
-    "Validation Loss": history.history['val_loss']
 }
 df = pd.DataFrame(data)
 df.to_excel("stl10_accuracy_data.xlsx", index=False)
@@ -112,12 +109,3 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-plt.figure(figsize=(10, 6))
-plt.plot(range(1, len(history.history['loss']) + 1), history.history['loss'], label='Training Loss')
-plt.plot(range(1, len(history.history['val_loss']) + 1), history.history['val_loss'], label='Validation Loss')
-plt.title('Loss vs Epochs')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.legend()
-plt.grid(True)
-plt.show()
