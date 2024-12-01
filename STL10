@@ -2,15 +2,10 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (SeparableConv2D, BatchNormalization, MaxPooling2D,
-                                     Flatten, Dense, Dropout, GlobalAveragePooling2D)
+                                     GlobalAveragePooling2D, Dense, Dropout)
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
-from tensorflow.keras.layers import Input
-
-from tensorflow.keras.callbacks import ReduceLROnPlateau
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
 
 # Load the STL-10 dataset
 stl10_dataset, dataset_info = tfds.load("stl10", with_info=True, as_supervised=True)
@@ -38,7 +33,6 @@ def augment(image, label):
     image = tf.image.random_hue(image, max_delta=0.05)
     return image, label
 
-
 train_dataset = train_dataset.map(augment, num_parallel_calls=AUTOTUNE)
 
 # Prefetch and batch
@@ -46,36 +40,38 @@ train_dataset = train_dataset.shuffle(1000).batch(64).prefetch(buffer_size=AUTOT
 test_dataset = test_dataset.batch(64).prefetch(buffer_size=AUTOTUNE)
 
 # Define the model
+from tensorflow.keras import regularizers
+
 model = Sequential([
-        Input(shape=(96, 96, 3)),  # Explicit input layer
-        SeparableConv2D(512, (3, 3), activation='relu', kernel_regularizer=l2(1e-3))
-        BatchNormalization(),
-        MaxPooling2D((2, 2)),
+    SeparableConv2D(64, (3, 3), activation='relu', padding='same', 
+                    input_shape=(96, 96, 3)),
+    BatchNormalization(),
+    SeparableConv2D(128, (3, 3), activation='relu', padding='same'),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    SeparableConv2D(256, (3, 3), activation='relu', padding='same'),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    SeparableConv2D(512, (3, 3), activation='relu', padding='same'),
+    BatchNormalization(),
+    MaxPooling2D((2, 2)),
+    GlobalAveragePooling2D(),
+    Dense(512, activation='relu'),
+    Dropout(0.5),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(10, activation='softmax')
+])
 
-        SeparableConv2D(512, (3, 3), activation='relu', kernel_regularizer=l2(1e-3))
-        BatchNormalization(),
-        MaxPooling2D((2, 2)),
+# Add regularizers separately in Dense layers
+for layer in model.layers:
+    if isinstance(layer, Dense):
+        layer.kernel_regularizer = regularizers.l2(1e-4)
 
-        SeparableConv2D(512, (3, 3), activation='relu', kernel_regularizer=l2(1e-3))
-        BatchNormalization(),
-        MaxPooling2D((2, 2)),
-
-        SeparableConv2D(512, (3, 3), activation='relu', kernel_regularizer=l2(1e-3))
-        BatchNormalization(),
-        MaxPooling2D((2, 2)),
-
-        GlobalAveragePooling2D(),
-        Dense(1024, activation='relu', kernel_regularizer=l2(1e-3)),
-    
-        Dropout(0.6),
-        Dense(1024, activation='relu', kernel_regularizer=l2(1e-3)),
-        Dropout(0.6),
-        Dense(10, activation='softmax')
-    ])
-
-# Optimizer and learning rate scheduler
-optimizer = Adam(learning_rate=1e-4)
-lr_scheduler = ReduceLROnPlateau(monitor='val_loss', patience=5, factor=0.5, verbose=1)
+# Optimizer and callbacks
+optimizer = Adam(learning_rate=1e-3)
+lr_scheduler = ReduceLROnPlateau(monitor='val_loss', patience=5, factor=0.2, min_lr=1e-6, verbose=1)
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1)
 
 # Compile the model
 model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
@@ -83,7 +79,7 @@ model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['ac
 # Training loop
 epochs = 200
 history = model.fit(train_dataset, epochs=epochs, validation_data=test_dataset, 
-                    callbacks=[lr_scheduler], verbose=1)
+                    callbacks=[lr_scheduler, early_stopping], verbose=1)
 
 # Evaluate the model
 loss, accuracy = model.evaluate(test_dataset)
@@ -91,8 +87,9 @@ print(f"Test Loss: {loss:.4f}")
 print(f"Test Accuracy: {accuracy:.4f}")
 
 # Save accuracy and loss data
+import pandas as pd
 data = {
-    "Epoch": list(range(1, epochs + 1)),
+    "Epoch": list(range(1, len(history.history['accuracy']) + 1)),
     "Training Accuracy": history.history['accuracy'],
     "Validation Accuracy": history.history['val_accuracy'],
     "Training Loss": history.history['loss'],
@@ -103,9 +100,11 @@ df.to_excel("stl10_accuracy_data.xlsx", index=False)
 print("Accuracy and loss data saved to 'stl10_accuracy_data.xlsx'")
 
 # Plot accuracy and loss
+import matplotlib.pyplot as plt
+
 plt.figure(figsize=(10, 6))
-plt.plot(range(1, epochs + 1), history.history['accuracy'], label='Training Accuracy')
-plt.plot(range(1, epochs + 1), history.history['val_accuracy'], label='Validation Accuracy')
+plt.plot(range(1, len(history.history['accuracy']) + 1), history.history['accuracy'], label='Training Accuracy')
+plt.plot(range(1, len(history.history['val_accuracy']) + 1), history.history['val_accuracy'], label='Validation Accuracy')
 plt.title('Accuracy vs Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Accuracy')
@@ -114,8 +113,8 @@ plt.grid(True)
 plt.show()
 
 plt.figure(figsize=(10, 6))
-plt.plot(range(1, epochs + 1), history.history['loss'], label='Training Loss')
-plt.plot(range(1, epochs + 1), history.history['val_loss'], label='Validation Loss')
+plt.plot(range(1, len(history.history['loss']) + 1), history.history['loss'], label='Training Loss')
+plt.plot(range(1, len(history.history['val_loss']) + 1), history.history['val_loss'], label='Validation Loss')
 plt.title('Loss vs Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
